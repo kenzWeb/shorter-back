@@ -5,12 +5,14 @@ import {
 } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
+import { ClickStatistics } from '../interfaces/click-statistics.interface';
 import { ShortUrl } from '../interfaces/short-url.interface';
 
 @Injectable()
 export class UrlShortenerService {
   private urls: Map<string, ShortUrl> = new Map();
   private aliases: Set<string> = new Set();
+  private clickStatistics: Map<string, ClickStatistics[]> = new Map();
 
   createShortUrl(createShortUrlDto: CreateShortUrlDto): ShortUrl {
     const { originalUrl, expiresAt, alias } = createShortUrlDto;
@@ -64,11 +66,50 @@ export class UrlShortenerService {
     return url;
   }
 
-  incrementClickCount(shortCode: string): void {
+  incrementClickCount(
+    shortCode: string,
+    ipAddress: string,
+    userAgent?: string,
+  ): void {
     const url = this.urls.get(shortCode);
     if (url) {
       url.clickCount++;
+
+      const clickStat: ClickStatistics = {
+        id: nanoid(),
+        shortCode,
+        clickedAt: new Date(),
+        ipAddress,
+        userAgent,
+      };
+
+      if (!this.clickStatistics.has(shortCode)) {
+        this.clickStatistics.set(shortCode, []);
+      }
+
+      this.clickStatistics.get(shortCode)!.push(clickStat);
     }
+  }
+
+  getClickStatistics(shortCode: string): ClickStatistics[] {
+    return this.clickStatistics.get(shortCode) || [];
+  }
+
+  getAllClickStatistics(): Map<string, ClickStatistics[]> {
+    return this.clickStatistics;
+  }
+
+  getDetailedUrlInfo(shortCode: string): {
+    url: ShortUrl | null;
+    statistics: ClickStatistics[];
+  } {
+    const url = this.getUrlByCode(shortCode);
+    const statistics = this.getClickStatistics(shortCode);
+
+    return {
+      url,
+      statistics,
+    };
   }
 
   getAllUrls(): ShortUrl[] {

@@ -7,11 +7,12 @@ import {
   NotFoundException,
   Param,
   Post,
+  Req,
   Res,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
 import { UrlShortenerService } from '../services/url-shortener.service';
 
@@ -39,14 +40,26 @@ export class UrlShortenerController {
   }
 
   @Get(':shortCode')
-  redirect(@Param('shortCode') shortCode: string, @Res() res: Response) {
+  redirect(
+    @Param('shortCode') shortCode: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const url = this.urlShortenerService.getUrlByCode(shortCode);
 
     if (!url) {
       throw new NotFoundException('Короткая ссылка не найдена или истекла');
     }
 
-    this.urlShortenerService.incrementClickCount(shortCode);
+    // Получаем IP-адрес клиента
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+    const userAgent = req.get('User-Agent');
+
+    this.urlShortenerService.incrementClickCount(
+      shortCode,
+      ipAddress,
+      userAgent,
+    );
 
     res.redirect(HttpStatus.MOVED_PERMANENTLY, url.originalUrl);
   }
@@ -89,6 +102,60 @@ export class UrlShortenerController {
     return {
       success: true,
       message: 'Короткая ссылка успешно удалена',
+    };
+  }
+
+  @Get('stats/:shortCode')
+  getUrlStatistics(@Param('shortCode') shortCode: string) {
+    const detailedInfo = this.urlShortenerService.getDetailedUrlInfo(shortCode);
+
+    if (!detailedInfo.url) {
+      throw new NotFoundException('Короткая ссылка не найдена или истекла');
+    }
+
+    return {
+      success: true,
+      data: {
+        url: {
+          originalUrl: detailedInfo.url.originalUrl,
+          shortCode: detailedInfo.url.shortCode,
+          createdAt: detailedInfo.url.createdAt,
+          clickCount: detailedInfo.url.clickCount,
+        },
+        statistics: detailedInfo.statistics.map((stat) => ({
+          clickedAt: stat.clickedAt,
+          ipAddress: stat.ipAddress,
+          userAgent: stat.userAgent,
+        })),
+      },
+    };
+  }
+
+  @Get('analytics/summary')
+  getAnalyticsSummary() {
+    const allUrls = this.urlShortenerService.getAllUrls();
+    const allStats = this.urlShortenerService.getAllClickStatistics();
+
+    const summary = allUrls.map((url) => {
+      const stats = allStats.get(url.shortCode) || [];
+      const uniqueIPs = new Set(stats.map((s) => s.ipAddress)).size;
+      const recentClicks = stats.filter(
+        (s) => s.clickedAt >= new Date(Date.now() - 24 * 60 * 60 * 1000),
+      ).length;
+
+      return {
+        shortCode: url.shortCode,
+        originalUrl: url.originalUrl,
+        totalClicks: url.clickCount,
+        uniqueVisitors: uniqueIPs,
+        clicksLast24h: recentClicks,
+        createdAt: url.createdAt,
+      };
+    });
+
+    return {
+      success: true,
+      data: summary,
     };
   }
 }
