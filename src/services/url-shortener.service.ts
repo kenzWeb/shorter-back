@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
@@ -63,10 +64,10 @@ export class UrlShortenerService {
       id: createdUrl.id,
       originalUrl: createdUrl.originalUrl,
       shortCode: createdUrl.shortCode,
-      alias: createdUrl.alias,
+      alias: createdUrl.alias ?? undefined,
       shortUrl: createdUrl.shortUrl,
       clickCount: createdUrl.clickCount,
-      expiresAt: createdUrl.expiresAt,
+      expiresAt: createdUrl.expiresAt ?? undefined,
       createdAt: createdUrl.createdAt,
     };
   }
@@ -88,10 +89,10 @@ export class UrlShortenerService {
       id: url.id,
       originalUrl: url.originalUrl,
       shortCode: url.shortCode,
-      alias: url.alias,
+      alias: url.alias ?? undefined,
       shortUrl: url.shortUrl,
       clickCount: url.clickCount,
-      expiresAt: url.expiresAt,
+      expiresAt: url.expiresAt ?? undefined,
       createdAt: url.createdAt,
     };
   }
@@ -156,10 +157,10 @@ export class UrlShortenerService {
       id: url.id,
       originalUrl: url.originalUrl,
       shortCode: url.shortCode,
-      alias: url.alias,
+      alias: url.alias ?? undefined,
       shortUrl: url.shortUrl,
       clickCount: url.clickCount,
-      expiresAt: url.expiresAt,
+      expiresAt: url.expiresAt ?? undefined,
       createdAt: url.createdAt,
     }));
   }
@@ -190,12 +191,20 @@ export class UrlShortenerService {
   }
 
   async deleteUrl(shortCode: string): Promise<boolean> {
+    const existingUrl = await this.prisma.shortUrl.findUnique({
+      where: { shortCode },
+    });
+
+    if (!existingUrl) {
+      return false;
+    }
+
     try {
       await this.prisma.shortUrl.delete({
         where: { shortCode },
       });
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -205,7 +214,15 @@ export class UrlShortenerService {
     lastFiveIPs: string[];
     url: ShortUrl | null;
   }> {
-    const url = await this.getUrlByCode(shortCode);
+    const url = await this.prisma.shortUrl.findUnique({
+      where: { shortCode },
+    });
+
+    if (!url) {
+      throw new NotFoundException('Короткая ссылка не найдена');
+    }
+
+    const urlData = await this.getUrlByCode(shortCode);
     const statistics = await this.getClickStatistics(shortCode);
 
     const recentStats = statistics
@@ -223,9 +240,9 @@ export class UrlShortenerService {
     }
 
     return {
-      clickCount: url?.clickCount || 0,
+      clickCount: urlData?.clickCount || 0,
       lastFiveIPs,
-      url,
+      url: urlData,
     };
   }
 }

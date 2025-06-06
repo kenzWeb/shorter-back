@@ -3,5 +3,5 @@ export interface ClickStatistics {
   shortCode: string;
   clickedAt: Date;
   ipAddress: string;
-  userAgent?: string | null;
+  userAgent?: string;
 }

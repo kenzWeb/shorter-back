@@ -3,8 +3,8 @@ export interface ShortUrl {
   originalUrl: string;
   shortCode: string;
   shortUrl: string;
-  alias?: string | null;
-  expiresAt?: Date | null;
+  alias?: string;
+  expiresAt?: Date;
   createdAt: Date;
   clickCount: number;
 }

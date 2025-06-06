@@ -2,10 +2,47 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
+import { PrismaService } from '../src/services/prisma.service';
 import { AppModule } from './../src/app.module';
+
+// Типы для API ответов
+interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+}
+
+interface ShortUrlData {
+  originalUrl: string;
+  shortCode: string;
+  alias?: string;
+  shortUrl: string;
+  clickCount: number;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+interface ClickStatistic {
+  ipAddress: string;
+  userAgent: string;
+  timestamp: string;
+}
+
+interface StatsData {
+  url: ShortUrlData;
+  statistics: ClickStatistic[];
+}
+
+interface SummaryData {
+  shortCode: string;
+  originalUrl: string;
+  totalClicks: number;
+  uniqueVisitors: number;
+}
 
 describe('URL Shortener (e2e)', () => {
   let app: INestApplication<App>;
+  let prismaService: PrismaService;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -13,6 +50,7 @@ describe('URL Shortener (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    prismaService = moduleFixture.get<PrismaService>(PrismaService);
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -23,6 +61,10 @@ describe('URL Shortener (e2e)', () => {
     );
 
     await app.init();
+
+    // Очищаем базу данных перед каждым тестом
+    await prismaService.clickStatistic.deleteMany();
+    await prismaService.shortUrl.deleteMany();
   });
 
   afterEach(async () => {
@@ -39,13 +81,12 @@ describe('URL Shortener (e2e)', () => {
         })
         .expect(201)
         .expect((res) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data.originalUrl).toBe('https://www.google.com');
-          expect(res.body.data.shortCode).toBe('google-test');
-          expect(res.body.data.alias).toBe('google-test');
-          expect(res.body.data.shortUrl).toBe(
-            'http://localhost:3000/google-test',
-          );
+          const body = res.body as ApiResponse<ShortUrlData>;
+          expect(body.success).toBe(true);
+          expect(body.data?.originalUrl).toBe('https://www.google.com');
+          expect(body.data?.shortCode).toBe('google-test');
+          expect(body.data?.alias).toBe('google-test');
+          expect(body.data?.shortUrl).toBe('http://localhost:3000/google-test');
         });
     });
 
@@ -57,10 +98,11 @@ describe('URL Shortener (e2e)', () => {
         })
         .expect(201)
         .expect((res) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data.originalUrl).toBe('https://www.github.com');
-          expect(res.body.data.shortCode).toHaveLength(8);
-          expect(res.body.data.alias).toBeUndefined();
+          const body = res.body as ApiResponse<ShortUrlData>;
+          expect(body.success).toBe(true);
+          expect(body.data?.originalUrl).toBe('https://www.github.com');
+          expect(body.data?.shortCode).toHaveLength(8);
+          expect(body.data?.alias).toBeUndefined();
         });
     });
 
@@ -112,7 +154,8 @@ describe('URL Shortener (e2e)', () => {
         })
         .expect(201);
 
-      const shortCode = createResponse.body.data.shortCode;
+      const body = createResponse.body as ApiResponse<ShortUrlData>;
+      const shortCode = body.data?.shortCode;
 
       return request(app.getHttpServer())
         .get(`/${shortCode}`)
@@ -155,10 +198,11 @@ describe('URL Shortener (e2e)', () => {
         .get('/info/info-e2e')
         .expect(200)
         .expect((res) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data.originalUrl).toBe('https://www.info-test.com');
-          expect(res.body.data.clickCount).toBe(0);
-          expect(res.body.data.createdAt).toBeDefined();
+          const body = res.body as ApiResponse<ShortUrlData>;
+          expect(body.success).toBe(true);
+          expect(body.data?.originalUrl).toBe('https://www.info-test.com');
+          expect(body.data?.clickCount).toBe(0);
+          expect(body.data?.createdAt).toBeDefined();
         });
     });
 
@@ -181,8 +225,9 @@ describe('URL Shortener (e2e)', () => {
         .delete('/delete/delete-e2e')
         .expect(200)
         .expect((res) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.message).toBe('Короткая ссылка успешно удалена');
+          const body = res.body as ApiResponse;
+          expect(body.success).toBe(true);
+          expect(body.message).toBe('Короткая ссылка успешно удалена');
         });
 
       return request(app.getHttpServer()).get('/info/delete-e2e').expect(404);
@@ -213,13 +258,12 @@ describe('URL Shortener (e2e)', () => {
         .get('/stats/stats-e2e')
         .expect(200)
         .expect((res) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data.url.originalUrl).toBe(
-            'https://www.stats-test.com',
-          );
-          expect(res.body.data.url.clickCount).toBe(2);
-          expect(res.body.data.statistics).toHaveLength(2);
-          expect(res.body.data.statistics[0].ipAddress).toBeDefined();
+          const body = res.body as ApiResponse<StatsData>;
+          expect(body.success).toBe(true);
+          expect(body.data?.url.originalUrl).toBe('https://www.stats-test.com');
+          expect(body.data?.url.clickCount).toBe(2);
+          expect(body.data?.statistics).toHaveLength(2);
+          expect(body.data?.statistics[0]?.ipAddress).toBeDefined();
         });
     });
   });
@@ -246,13 +290,14 @@ describe('URL Shortener (e2e)', () => {
         .get('/analytics/summary')
         .expect(200)
         .expect((res) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data).toBeInstanceOf(Array);
-          expect(res.body.data.length).toBeGreaterThanOrEqual(2);
-          expect(res.body.data[0]).toHaveProperty('shortCode');
-          expect(res.body.data[0]).toHaveProperty('originalUrl');
-          expect(res.body.data[0]).toHaveProperty('totalClicks');
-          expect(res.body.data[0]).toHaveProperty('uniqueVisitors');
+          const body = res.body as ApiResponse<SummaryData[]>;
+          expect(body.success).toBe(true);
+          expect(body.data).toBeInstanceOf(Array);
+          expect(body.data?.length).toBeGreaterThanOrEqual(2);
+          expect(body.data?.[0]).toHaveProperty('shortCode');
+          expect(body.data?.[0]).toHaveProperty('originalUrl');
+          expect(body.data?.[0]).toHaveProperty('totalClicks');
+          expect(body.data?.[0]).toHaveProperty('uniqueVisitors');
         });
     });
   });

@@ -2,21 +2,42 @@ import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Request, Response } from 'express';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
+import { PrismaService } from '../services/prisma.service';
 import { UrlShortenerService } from '../services/url-shortener.service';
 import { UrlShortenerController } from './url-shortener.controller';
 
+const mockPrismaService = {
+  shortUrl: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    findMany: jest.fn(),
+  },
+  clickStatistic: {
+    create: jest.fn(),
+    findMany: jest.fn(),
+  },
+};
+
 describe('UrlShortenerController', () => {
   let controller: UrlShortenerController;
-  let service: UrlShortenerService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UrlShortenerController],
-      providers: [UrlShortenerService],
+      providers: [
+        UrlShortenerService,
+        {
+          provide: PrismaService,
+          useValue: mockPrismaService,
+        },
+      ],
     }).compile();
 
     controller = module.get<UrlShortenerController>(UrlShortenerController);
-    service = module.get<UrlShortenerService>(UrlShortenerService);
+
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -24,13 +45,28 @@ describe('UrlShortenerController', () => {
   });
 
   describe('shortenUrl', () => {
-    it('should create a short URL with unique alias', () => {
+    it('should create a short URL with unique alias', async () => {
       const createShortUrlDto: CreateShortUrlDto = {
         originalUrl: 'https://www.example.com',
         alias: 'unique-alias',
       };
 
-      const result = controller.shortenUrl(createShortUrlDto);
+      const mockCreatedUrl = {
+        id: '1',
+        originalUrl: 'https://www.example.com',
+        shortCode: 'unique-alias',
+        alias: 'unique-alias',
+        clickCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        shortUrl: 'http://localhost:3000/unique-alias',
+      };
+
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(null);
+      mockPrismaService.shortUrl.create.mockResolvedValue(mockCreatedUrl);
+
+      const result = await controller.shortenUrl(createShortUrlDto);
 
       expect(result.success).toBe(true);
       expect(result.data.originalUrl).toBe('https://www.example.com');
@@ -39,28 +75,61 @@ describe('UrlShortenerController', () => {
       expect(result.data.shortUrl).toBe('http://localhost:3000/unique-alias');
     });
 
-    it('should create a short URL without alias', () => {
+    it('should create a short URL without alias', async () => {
       const createShortUrlDto: CreateShortUrlDto = {
         originalUrl: 'https://www.github.com',
       };
 
-      const result = controller.shortenUrl(createShortUrlDto);
+      const mockCreatedUrl = {
+        id: '2',
+        originalUrl: 'https://www.github.com',
+        shortCode: 'abc12345',
+        alias: null,
+        clickCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        shortUrl: 'http://localhost:3000/abc12345',
+      };
+
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(null);
+      mockPrismaService.shortUrl.create.mockResolvedValue(mockCreatedUrl);
+
+      const result = await controller.shortenUrl(createShortUrlDto);
 
       expect(result.success).toBe(true);
       expect(result.data.originalUrl).toBe('https://www.github.com');
-      expect(result.data.shortCode).toHaveLength(8);
+      expect(result.data.shortCode).toBe('abc12345');
       expect(result.data.alias).toBeUndefined();
     });
   });
 
   describe('redirect', () => {
-    it('should redirect to original URL', () => {
-      const createShortUrlDto: CreateShortUrlDto = {
+    it('should redirect to original URL', async () => {
+      const mockUrl = {
+        id: '1',
         originalUrl: 'https://www.redirect-test.com',
+        shortCode: 'redirect-test',
         alias: 'redirect-test',
+        clickCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        shortUrl: 'http://localhost:3000/redirect-test',
       };
 
-      controller.shortenUrl(createShortUrlDto);
+      const updatedUrl = { ...mockUrl, clickCount: 1 };
+
+      mockPrismaService.shortUrl.findUnique.mockResolvedValueOnce(mockUrl);
+
+      mockPrismaService.shortUrl.update.mockResolvedValue(updatedUrl);
+      mockPrismaService.clickStatistic.create.mockResolvedValue({
+        id: '1',
+        shortCode: 'redirect-test',
+        ipAddress: '192.168.1.100',
+        userAgent: 'Test User Agent',
+        clickedAt: new Date(),
+      });
 
       const mockRequest = {
         ip: '192.168.1.100',
@@ -68,48 +137,26 @@ describe('UrlShortenerController', () => {
         get: jest.fn().mockReturnValue('Test User Agent'),
       } as unknown as Request;
 
+      const mockRedirect = jest.fn();
       const mockResponse = {
-        redirect: jest.fn(),
+        redirect: mockRedirect,
       } as unknown as Response;
 
-      controller.redirect('redirect-test', mockRequest, mockResponse);
+      await controller.redirect('redirect-test', mockRequest, mockResponse);
 
-      expect(mockResponse.redirect).toHaveBeenCalledWith(
+      expect(mockRedirect).toHaveBeenCalledWith(
         301,
         'https://www.redirect-test.com',
       );
 
-      const urlInfo = controller.getUrlInfo('redirect-test');
+      mockPrismaService.shortUrl.findUnique.mockResolvedValueOnce(updatedUrl);
+
+      const urlInfo = await controller.getUrlInfo('redirect-test');
       expect(urlInfo.data.clickCount).toBe(1);
     });
 
-    it('should throw NotFoundException for non-existent short code', () => {
-      const mockRequest = {
-        ip: '192.168.1.100',
-        connection: { remoteAddress: '192.168.1.100' },
-        get: jest.fn().mockReturnValue('Test User Agent'),
-      } as unknown as Request;
-
-      const mockResponse = {
-        redirect: jest.fn(),
-      } as unknown as Response;
-
-      expect(() => {
-        controller.redirect('non-existent', mockRequest, mockResponse);
-      }).toThrow(NotFoundException);
-    });
-
-    it('should throw NotFoundException for expired URL', () => {
-      const pastDate = new Date();
-      pastDate.setDate(pastDate.getDate() - 1);
-
-      const createShortUrlDto: CreateShortUrlDto = {
-        originalUrl: 'https://www.expired.com',
-        alias: 'expired-test',
-        expiresAt: pastDate.toISOString(),
-      };
-
-      controller.shortenUrl(createShortUrlDto);
+    it('should throw NotFoundException for non-existent short code', async () => {
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(null);
 
       const mockRequest = {
         ip: '192.168.1.100',
@@ -117,133 +164,167 @@ describe('UrlShortenerController', () => {
         get: jest.fn().mockReturnValue('Test User Agent'),
       } as unknown as Request;
 
+      const mockRedirect = jest.fn();
       const mockResponse = {
-        redirect: jest.fn(),
+        redirect: mockRedirect,
       } as unknown as Response;
 
-      expect(() => {
-        controller.redirect('expired-test', mockRequest, mockResponse);
-      }).toThrow(NotFoundException);
+      await expect(
+        controller.redirect('non-existent', mockRequest, mockResponse),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('getUrlInfo', () => {
-    it('should return URL information', () => {
-      const createShortUrlDto: CreateShortUrlDto = {
-        originalUrl: 'https://www.info-test.com',
-        alias: 'info-test',
+    it('should return URL information', async () => {
+      const mockUrl = {
+        id: '1',
+        originalUrl: 'https://www.test.com',
+        shortCode: 'test-info',
+        alias: 'test-info',
+        clickCount: 5,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        shortUrl: 'http://localhost:3000/test-info',
       };
 
-      controller.shortenUrl(createShortUrlDto);
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(mockUrl);
 
-      const result = controller.getUrlInfo('info-test');
+      const result = await controller.getUrlInfo('test-info');
 
       expect(result.success).toBe(true);
-      expect(result.data.originalUrl).toBe('https://www.info-test.com');
-      expect(result.data.clickCount).toBe(0);
-      expect(result.data.createdAt).toBeDefined();
+      expect(result.data.originalUrl).toBe('https://www.test.com');
+      expect(result.data.clickCount).toBe(5);
     });
 
-    it('should throw NotFoundException for non-existent URL', () => {
-      expect(() => {
-        controller.getUrlInfo('non-existent');
-      }).toThrow(NotFoundException);
+    it('should throw NotFoundException for non-existent short code', async () => {
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(null);
+
+      await expect(controller.getUrlInfo('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('deleteUrl', () => {
-    it('should delete existing URL', () => {
-      const createShortUrlDto: CreateShortUrlDto = {
+    it('should delete existing URL', async () => {
+      const mockUrl = {
+        id: '1',
         originalUrl: 'https://www.delete-test.com',
+        shortCode: 'delete-test',
         alias: 'delete-test',
+        clickCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        shortUrl: 'http://localhost:3000/delete-test',
       };
 
-      controller.shortenUrl(createShortUrlDto);
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(mockUrl);
+      mockPrismaService.shortUrl.delete.mockResolvedValue(mockUrl);
 
-      const result = controller.deleteUrl('delete-test');
+      const result = await controller.deleteUrl('delete-test');
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Короткая ссылка успешно удалена');
-
-      expect(() => {
-        controller.getUrlInfo('delete-test');
-      }).toThrow(NotFoundException);
     });
 
-    it('should throw NotFoundException for non-existent URL', () => {
-      expect(() => {
-        controller.deleteUrl('non-existent');
-      }).toThrow(NotFoundException);
-    });
-  });
+    it('should throw NotFoundException for non-existent URL', async () => {
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(null);
 
-  describe('getUrlStatistics', () => {
-    it('should return detailed statistics', () => {
-      const createShortUrlDto: CreateShortUrlDto = {
-        originalUrl: 'https://www.stats-test.com',
-        alias: 'stats-test',
-      };
-
-      controller.shortenUrl(createShortUrlDto);
-
-      const mockRequest = {
-        ip: '192.168.1.200',
-        connection: { remoteAddress: '192.168.1.200' },
-        get: jest.fn().mockReturnValue('Stats Test Agent'),
-      } as unknown as Request;
-
-      const mockResponse = {
-        redirect: jest.fn(),
-      } as unknown as Response;
-
-      controller.redirect('stats-test', mockRequest, mockResponse);
-      controller.redirect('stats-test', mockRequest, mockResponse);
-
-      const result = controller.getUrlStatistics('stats-test');
-
-      expect(result.success).toBe(true);
-      expect(result.data.url.originalUrl).toBe('https://www.stats-test.com');
-      expect(result.data.url.clickCount).toBe(2);
-      expect(result.data.statistics).toHaveLength(2);
-      expect(result.data.statistics[0].ipAddress).toBe('192.168.1.200');
-      expect(result.data.statistics[0].userAgent).toBe('Stats Test Agent');
+      await expect(controller.deleteUrl('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('getUrlAnalytics', () => {
-    it('should return analytics with last 5 IPs', () => {
-      const createShortUrlDto: CreateShortUrlDto = {
-        originalUrl: 'https://www.analytics.com',
+    it('should return analytics data', async () => {
+      const mockUrl = {
+        id: '1',
+        originalUrl: 'https://www.analytics-test.com',
+        shortCode: 'analytics-test',
         alias: 'analytics-test',
+        clickCount: 6,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        shortUrl: 'http://localhost:3000/analytics-test',
       };
 
-      controller.shortenUrl(createShortUrlDto);
+      const mockStatistics = [
+        {
+          id: '6',
+          shortUrlId: '1',
+          ipAddress: '192.168.1.6',
+          userAgent: 'Test Agent',
+          clickedAt: new Date(Date.now() - 1000),
+        },
+        {
+          id: '5',
+          shortUrlId: '1',
+          ipAddress: '192.168.1.5',
+          userAgent: 'Test Agent',
+          clickedAt: new Date(Date.now() - 2000),
+        },
+        {
+          id: '4',
+          shortUrlId: '1',
+          ipAddress: '192.168.1.4',
+          userAgent: 'Test Agent',
+          clickedAt: new Date(Date.now() - 3000),
+        },
+        {
+          id: '3',
+          shortUrlId: '1',
+          ipAddress: '192.168.1.3',
+          userAgent: 'Test Agent',
+          clickedAt: new Date(Date.now() - 4000),
+        },
+        {
+          id: '2',
+          shortUrlId: '1',
+          ipAddress: '192.168.1.2',
+          userAgent: 'Test Agent',
+          clickedAt: new Date(Date.now() - 5000),
+        },
+        {
+          id: '1',
+          shortUrlId: '1',
+          ipAddress: '192.168.1.1',
+          userAgent: 'Test Agent',
+          clickedAt: new Date(Date.now() - 6000),
+        },
+      ];
 
-      const ips = ['192.168.1.1', '192.168.1.2', '192.168.1.3'];
-      ips.forEach((ip) => {
-        const mockRequest = {
-          ip,
-          connection: { remoteAddress: ip },
-          get: jest.fn().mockReturnValue('Analytics Agent'),
-        } as unknown as Request;
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(mockUrl);
+      mockPrismaService.clickStatistic.findMany.mockResolvedValue(
+        mockStatistics,
+      );
 
-        const mockResponse = {
-          redirect: jest.fn(),
-        } as unknown as Response;
-
-        controller.redirect('analytics-test', mockRequest, mockResponse);
-      });
-
-      const result = controller.getUrlAnalytics('analytics-test');
+      const result = await controller.getUrlAnalytics('analytics-test');
 
       expect(result.success).toBe(true);
       expect(result.data.shortCode).toBe('analytics-test');
-      expect(result.data.clickCount).toBe(3);
+      expect(result.data.originalUrl).toBe('https://www.analytics-test.com');
+      expect(result.data.clickCount).toBe(6);
+      expect(result.data.lastFiveIPs).toHaveLength(5);
       expect(result.data.lastFiveIPs).toEqual([
-        '192.168.1.1',
-        '192.168.1.2',
+        '192.168.1.6',
+        '192.168.1.5',
+        '192.168.1.4',
         '192.168.1.3',
+        '192.168.1.2',
       ]);
+    });
+
+    it('should throw NotFoundException for non-existent short code', async () => {
+      mockPrismaService.shortUrl.findUnique.mockResolvedValue(null);
+
+      await expect(controller.getUrlAnalytics('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });
