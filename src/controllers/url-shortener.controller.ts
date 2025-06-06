@@ -51,7 +51,6 @@ export class UrlShortenerController {
       throw new NotFoundException('Короткая ссылка не найдена или истекла');
     }
 
-    // Получаем IP-адрес клиента
     const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
     const userAgent = req.get('User-Agent');
 
@@ -131,26 +130,6 @@ export class UrlShortenerController {
     };
   }
 
-  @Get('analytics/:shortCode')
-  getUrlAnalytics(@Param('shortCode') shortCode: string) {
-    const analytics = this.urlShortenerService.getAnalytics(shortCode);
-    
-    if (!analytics.url) {
-      throw new NotFoundException('Короткая ссылка не найдена или истекла');
-    }
-
-    return {
-      success: true,
-      data: {
-        shortCode: analytics.url.shortCode,
-        originalUrl: analytics.url.originalUrl,
-        clickCount: analytics.clickCount,
-        lastFiveIPs: analytics.lastFiveIPs,
-        createdAt: analytics.url.createdAt,
-      },
-    };
-  }
-
   @Get('analytics/summary')
   getAnalyticsSummary() {
     const allUrls = this.urlShortenerService.getAllUrls();
@@ -176,6 +155,26 @@ export class UrlShortenerController {
     return {
       success: true,
       data: summary,
+    };
+  }
+
+  @Get('analytics/:shortCode')
+  getUrlAnalytics(@Param('shortCode') shortCode: string) {
+    const analytics = this.urlShortenerService.getAnalytics(shortCode);
+
+    if (!analytics.url) {
+      throw new NotFoundException('Короткая ссылка не найдена или истекла');
+    }
+
+    return {
+      success: true,
+      data: {
+        shortCode: analytics.url.shortCode,
+        originalUrl: analytics.url.originalUrl,
+        clickCount: analytics.clickCount,
+        lastFiveIPs: analytics.lastFiveIPs,
+        createdAt: analytics.url.createdAt,
+      },
     };
   }
 }
