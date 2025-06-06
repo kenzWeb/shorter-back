@@ -74,4 +74,20 @@ export class UrlShortenerService {
   getAllUrls(): ShortUrl[] {
     return Array.from(this.urls.values());
   }
+
+  deleteUrl(shortCode: string): boolean {
+    const url = this.urls.get(shortCode);
+
+    if (!url) {
+      return false;
+    }
+
+    this.urls.delete(shortCode);
+
+    if (url.alias) {
+      this.aliases.delete(url.alias);
+    }
+
+    return true;
+  }
 }

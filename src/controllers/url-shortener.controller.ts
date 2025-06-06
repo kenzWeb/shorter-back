@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpStatus,
   NotFoundException,
@@ -74,6 +75,20 @@ export class UrlShortenerController {
     return {
       success: true,
       data: urls,
+    };
+  }
+
+  @Delete('delete/:shortCode')
+  deleteUrl(@Param('shortCode') shortCode: string) {
+    const deleted = this.urlShortenerService.deleteUrl(shortCode);
+
+    if (!deleted) {
+      throw new NotFoundException('Короткая ссылка не найдена');
+    }
+
+    return {
+      success: true,
+      message: 'Короткая ссылка успешно удалена',
     };
   }
 }
