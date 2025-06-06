@@ -50,6 +50,24 @@ export class UrlShortenerController {
     res.redirect(HttpStatus.MOVED_PERMANENTLY, url.originalUrl);
   }
 
+  @Get('info/:shortCode')
+  getUrlInfo(@Param('shortCode') shortCode: string) {
+    const url = this.urlShortenerService.getUrlByCode(shortCode);
+
+    if (!url) {
+      throw new NotFoundException('Короткая ссылка не найдена или истекла');
+    }
+
+    return {
+      success: true,
+      data: {
+        originalUrl: url.originalUrl,
+        createdAt: url.createdAt,
+        clickCount: url.clickCount,
+      },
+    };
+  }
+
   @Get('api/urls')
   getAllUrls() {
     const urls = this.urlShortenerService.getAllUrls();
