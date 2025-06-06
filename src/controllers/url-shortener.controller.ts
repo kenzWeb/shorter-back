@@ -131,6 +131,26 @@ export class UrlShortenerController {
     };
   }
 
+  @Get('analytics/:shortCode')
+  getUrlAnalytics(@Param('shortCode') shortCode: string) {
+    const analytics = this.urlShortenerService.getAnalytics(shortCode);
+    
+    if (!analytics.url) {
+      throw new NotFoundException('Короткая ссылка не найдена или истекла');
+    }
+
+    return {
+      success: true,
+      data: {
+        shortCode: analytics.url.shortCode,
+        originalUrl: analytics.url.originalUrl,
+        clickCount: analytics.clickCount,
+        lastFiveIPs: analytics.lastFiveIPs,
+        createdAt: analytics.url.createdAt,
+      },
+    };
+  }
+
   @Get('analytics/summary')
   getAnalyticsSummary() {
     const allUrls = this.urlShortenerService.getAllUrls();

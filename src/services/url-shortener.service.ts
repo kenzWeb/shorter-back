@@ -131,4 +131,34 @@ export class UrlShortenerService {
 
     return true;
   }
+
+  getAnalytics(shortCode: string): {
+    clickCount: number;
+    lastFiveIPs: string[];
+    url: ShortUrl | null;
+  } {
+    const url = this.getUrlByCode(shortCode);
+    const statistics = this.getClickStatistics(shortCode);
+
+    // Получаем последние 5 уникальных IP-адресов
+    const recentStats = statistics
+      .sort((a, b) => b.clickedAt.getTime() - a.clickedAt.getTime()) // сортируем по убыванию даты
+      .slice(0, 20); // берем последние 20 записей для анализа
+
+    const uniqueIPs = new Set<string>();
+    const lastFiveIPs: string[] = [];
+
+    for (const stat of recentStats) {
+      if (!uniqueIPs.has(stat.ipAddress) && lastFiveIPs.length < 5) {
+        uniqueIPs.add(stat.ipAddress);
+        lastFiveIPs.push(stat.ipAddress);
+      }
+    }
+
+    return {
+      clickCount: url?.clickCount || 0,
+      lastFiveIPs,
+      url,
+    };
+  }
 }
