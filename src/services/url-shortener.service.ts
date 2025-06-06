@@ -7,20 +7,26 @@ import { nanoid } from 'nanoid';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
 import { ClickStatistics } from '../interfaces/click-statistics.interface';
 import { ShortUrl } from '../interfaces/short-url.interface';
+import { PrismaService } from './prisma.service';
 
 @Injectable()
 export class UrlShortenerService {
-  private urls: Map<string, ShortUrl> = new Map();
-  private aliases: Set<string> = new Set();
-  private clickStatistics: Map<string, ClickStatistics[]> = new Map();
+  constructor(private prisma: PrismaService) {}
 
-  createShortUrl(createShortUrlDto: CreateShortUrlDto): ShortUrl {
+  async createShortUrl(
+    createShortUrlDto: CreateShortUrlDto,
+  ): Promise<ShortUrl> {
     const { originalUrl, expiresAt, alias } = createShortUrlDto;
 
     if (alias) {
-      if (this.aliases.has(alias)) {
+      const existingUrl = await this.prisma.shortUrl.findUnique({
+        where: { alias },
+      });
+
+      if (existingUrl) {
         throw new ConflictException('Алиас уже используется');
       }
+
       if (!/^[a-zA-Z0-9_-]+$/.test(alias)) {
         throw new BadRequestException(
           'Алиас может содержать только буквы, цифры, дефисы и подчеркивания',
@@ -29,31 +35,46 @@ export class UrlShortenerService {
     }
 
     const shortCode = alias || nanoid(8);
-    const id = nanoid();
 
-    const shortUrl = `http://localhost:3000/${shortCode}`;
+    if (!alias) {
+      const existingByCode = await this.prisma.shortUrl.findUnique({
+        where: { shortCode },
+      });
 
-    const urlData: ShortUrl = {
-      id,
-      originalUrl,
-      shortCode,
-      shortUrl,
-      alias,
-      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-      createdAt: new Date(),
-      clickCount: 0,
-    };
-
-    this.urls.set(shortCode, urlData);
-    if (alias) {
-      this.aliases.add(alias);
+      if (existingByCode) {
+        return this.createShortUrl(createShortUrlDto);
+      }
     }
 
-    return urlData;
+    const shortUrl = `http://localhost:3000/${shortCode}`;
+    const expiration = expiresAt ? new Date(expiresAt) : null;
+
+    const createdUrl = await this.prisma.shortUrl.create({
+      data: {
+        originalUrl,
+        shortCode,
+        alias,
+        shortUrl,
+        expiresAt: expiration,
+      },
+    });
+
+    return {
+      id: createdUrl.id,
+      originalUrl: createdUrl.originalUrl,
+      shortCode: createdUrl.shortCode,
+      alias: createdUrl.alias,
+      shortUrl: createdUrl.shortUrl,
+      clickCount: createdUrl.clickCount,
+      expiresAt: createdUrl.expiresAt,
+      createdAt: createdUrl.createdAt,
+    };
   }
 
-  getUrlByCode(shortCode: string): ShortUrl | null {
-    const url = this.urls.get(shortCode);
+  async getUrlByCode(shortCode: string): Promise<ShortUrl | null> {
+    const url = await this.prisma.shortUrl.findUnique({
+      where: { shortCode },
+    });
 
     if (!url) {
       return null;
@@ -63,48 +84,62 @@ export class UrlShortenerService {
       return null;
     }
 
-    return url;
+    return {
+      id: url.id,
+      originalUrl: url.originalUrl,
+      shortCode: url.shortCode,
+      alias: url.alias,
+      shortUrl: url.shortUrl,
+      clickCount: url.clickCount,
+      expiresAt: url.expiresAt,
+      createdAt: url.createdAt,
+    };
   }
 
-  incrementClickCount(
+  async incrementClickCount(
     shortCode: string,
     ipAddress: string,
     userAgent?: string,
-  ): void {
-    const url = this.urls.get(shortCode);
-    if (url) {
-      url.clickCount++;
+  ): Promise<void> {
+    await this.prisma.shortUrl.update({
+      where: { shortCode },
+      data: {
+        clickCount: {
+          increment: 1,
+        },
+      },
+    });
 
-      const clickStat: ClickStatistics = {
-        id: nanoid(),
+    await this.prisma.clickStatistic.create({
+      data: {
         shortCode,
-        clickedAt: new Date(),
         ipAddress,
-        userAgent,
-      };
-
-      if (!this.clickStatistics.has(shortCode)) {
-        this.clickStatistics.set(shortCode, []);
-      }
-
-      this.clickStatistics.get(shortCode)!.push(clickStat);
-    }
+        userAgent: userAgent || '',
+      },
+    });
   }
 
-  getClickStatistics(shortCode: string): ClickStatistics[] {
-    return this.clickStatistics.get(shortCode) || [];
+  async getClickStatistics(shortCode: string): Promise<ClickStatistics[]> {
+    const statistics = await this.prisma.clickStatistic.findMany({
+      where: { shortCode },
+      orderBy: { clickedAt: 'desc' },
+    });
+
+    return statistics.map((stat) => ({
+      id: stat.id,
+      shortCode: stat.shortCode,
+      ipAddress: stat.ipAddress,
+      userAgent: stat.userAgent || '',
+      clickedAt: stat.clickedAt,
+    }));
   }
 
-  getAllClickStatistics(): Map<string, ClickStatistics[]> {
-    return this.clickStatistics;
-  }
-
-  getDetailedUrlInfo(shortCode: string): {
+  async getDetailedUrlInfo(shortCode: string): Promise<{
     url: ShortUrl | null;
     statistics: ClickStatistics[];
-  } {
-    const url = this.getUrlByCode(shortCode);
-    const statistics = this.getClickStatistics(shortCode);
+  }> {
+    const url = await this.getUrlByCode(shortCode);
+    const statistics = await this.getClickStatistics(shortCode);
 
     return {
       url,
@@ -112,38 +147,70 @@ export class UrlShortenerService {
     };
   }
 
-  getAllUrls(): ShortUrl[] {
-    return Array.from(this.urls.values());
+  async getAllUrls(): Promise<ShortUrl[]> {
+    const urls = await this.prisma.shortUrl.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return urls.map((url) => ({
+      id: url.id,
+      originalUrl: url.originalUrl,
+      shortCode: url.shortCode,
+      alias: url.alias,
+      shortUrl: url.shortUrl,
+      clickCount: url.clickCount,
+      expiresAt: url.expiresAt,
+      createdAt: url.createdAt,
+    }));
   }
 
-  deleteUrl(shortCode: string): boolean {
-    const url = this.urls.get(shortCode);
+  async getAllClickStatistics(): Promise<Map<string, ClickStatistics[]>> {
+    const allStats = await this.prisma.clickStatistic.findMany({
+      orderBy: { clickedAt: 'desc' },
+    });
 
-    if (!url) {
+    const statsMap = new Map<string, ClickStatistics[]>();
+
+    allStats.forEach((stat) => {
+      const shortCode = stat.shortCode;
+      if (!statsMap.has(shortCode)) {
+        statsMap.set(shortCode, []);
+      }
+
+      statsMap.get(shortCode)!.push({
+        id: stat.id,
+        shortCode: stat.shortCode,
+        ipAddress: stat.ipAddress,
+        userAgent: stat.userAgent || '',
+        clickedAt: stat.clickedAt,
+      });
+    });
+
+    return statsMap;
+  }
+
+  async deleteUrl(shortCode: string): Promise<boolean> {
+    try {
+      await this.prisma.shortUrl.delete({
+        where: { shortCode },
+      });
+      return true;
+    } catch (error) {
       return false;
     }
-
-    this.urls.delete(shortCode);
-
-    if (url.alias) {
-      this.aliases.delete(url.alias);
-    }
-
-    return true;
   }
 
-  getAnalytics(shortCode: string): {
+  async getAnalytics(shortCode: string): Promise<{
     clickCount: number;
     lastFiveIPs: string[];
     url: ShortUrl | null;
-  } {
-    const url = this.getUrlByCode(shortCode);
-    const statistics = this.getClickStatistics(shortCode);
+  }> {
+    const url = await this.getUrlByCode(shortCode);
+    const statistics = await this.getClickStatistics(shortCode);
 
-    // Получаем последние 5 уникальных IP-адресов
     const recentStats = statistics
-      .sort((a, b) => b.clickedAt.getTime() - a.clickedAt.getTime()) // сортируем по убыванию даты
-      .slice(0, 20); // берем последние 20 записей для анализа
+      .sort((a, b) => b.clickedAt.getTime() - a.clickedAt.getTime())
+      .slice(0, 20);
 
     const uniqueIPs = new Set<string>();
     const lastFiveIPs: string[] = [];

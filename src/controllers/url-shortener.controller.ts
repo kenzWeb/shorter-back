@@ -22,8 +22,9 @@ export class UrlShortenerController {
 
   @Post('shorten')
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  shortenUrl(@Body() createShortUrlDto: CreateShortUrlDto) {
-    const shortUrl = this.urlShortenerService.createShortUrl(createShortUrlDto);
+  async shortenUrl(@Body() createShortUrlDto: CreateShortUrlDto) {
+    const shortUrl =
+      await this.urlShortenerService.createShortUrl(createShortUrlDto);
 
     return {
       success: true,
@@ -40,12 +41,12 @@ export class UrlShortenerController {
   }
 
   @Get(':shortCode')
-  redirect(
+  async redirect(
     @Param('shortCode') shortCode: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const url = this.urlShortenerService.getUrlByCode(shortCode);
+    const url = await this.urlShortenerService.getUrlByCode(shortCode);
 
     if (!url) {
       throw new NotFoundException('Короткая ссылка не найдена или истекла');
@@ -54,7 +55,7 @@ export class UrlShortenerController {
     const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
     const userAgent = req.get('User-Agent');
 
-    this.urlShortenerService.incrementClickCount(
+    await this.urlShortenerService.incrementClickCount(
       shortCode,
       ipAddress,
       userAgent,
@@ -64,8 +65,8 @@ export class UrlShortenerController {
   }
 
   @Get('info/:shortCode')
-  getUrlInfo(@Param('shortCode') shortCode: string) {
-    const url = this.urlShortenerService.getUrlByCode(shortCode);
+  async getUrlInfo(@Param('shortCode') shortCode: string) {
+    const url = await this.urlShortenerService.getUrlByCode(shortCode);
 
     if (!url) {
       throw new NotFoundException('Короткая ссылка не найдена или истекла');
@@ -82,8 +83,8 @@ export class UrlShortenerController {
   }
 
   @Get('api/urls')
-  getAllUrls() {
-    const urls = this.urlShortenerService.getAllUrls();
+  async getAllUrls() {
+    const urls = await this.urlShortenerService.getAllUrls();
     return {
       success: true,
       data: urls,
@@ -91,8 +92,8 @@ export class UrlShortenerController {
   }
 
   @Delete('delete/:shortCode')
-  deleteUrl(@Param('shortCode') shortCode: string) {
-    const deleted = this.urlShortenerService.deleteUrl(shortCode);
+  async deleteUrl(@Param('shortCode') shortCode: string) {
+    const deleted = await this.urlShortenerService.deleteUrl(shortCode);
 
     if (!deleted) {
       throw new NotFoundException('Короткая ссылка не найдена');
@@ -105,8 +106,9 @@ export class UrlShortenerController {
   }
 
   @Get('stats/:shortCode')
-  getUrlStatistics(@Param('shortCode') shortCode: string) {
-    const detailedInfo = this.urlShortenerService.getDetailedUrlInfo(shortCode);
+  async getUrlStatistics(@Param('shortCode') shortCode: string) {
+    const detailedInfo =
+      await this.urlShortenerService.getDetailedUrlInfo(shortCode);
 
     if (!detailedInfo.url) {
       throw new NotFoundException('Короткая ссылка не найдена или истекла');
@@ -131,9 +133,9 @@ export class UrlShortenerController {
   }
 
   @Get('analytics/summary')
-  getAnalyticsSummary() {
-    const allUrls = this.urlShortenerService.getAllUrls();
-    const allStats = this.urlShortenerService.getAllClickStatistics();
+  async getAnalyticsSummary() {
+    const allUrls = await this.urlShortenerService.getAllUrls();
+    const allStats = await this.urlShortenerService.getAllClickStatistics();
 
     const summary = allUrls.map((url) => {
       const stats = allStats.get(url.shortCode) || [];
@@ -159,8 +161,8 @@ export class UrlShortenerController {
   }
 
   @Get('analytics/:shortCode')
-  getUrlAnalytics(@Param('shortCode') shortCode: string) {
-    const analytics = this.urlShortenerService.getAnalytics(shortCode);
+  async getUrlAnalytics(@Param('shortCode') shortCode: string) {
+    const analytics = await this.urlShortenerService.getAnalytics(shortCode);
 
     if (!analytics.url) {
       throw new NotFoundException('Короткая ссылка не найдена или истекла');
