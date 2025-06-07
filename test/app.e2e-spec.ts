@@ -2,43 +2,14 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
+import {
+  ApiResponse,
+  ShortUrlData,
+  StatsData,
+  SummaryData,
+} from '../src/interfaces';
 import { PrismaService } from '../src/services/prisma.service';
 import { AppModule } from './../src/app.module';
-
-// Типы для API ответов
-interface ApiResponse<T = any> {
-  success: boolean;
-  data?: T;
-  message?: string;
-}
-
-interface ShortUrlData {
-  originalUrl: string;
-  shortCode: string;
-  alias?: string;
-  shortUrl: string;
-  clickCount: number;
-  createdAt: string;
-  expiresAt?: string;
-}
-
-interface ClickStatistic {
-  ipAddress: string;
-  userAgent: string;
-  timestamp: string;
-}
-
-interface StatsData {
-  url: ShortUrlData;
-  statistics: ClickStatistic[];
-}
-
-interface SummaryData {
-  shortCode: string;
-  originalUrl: string;
-  totalClicks: number;
-  uniqueVisitors: number;
-}
 
 describe('URL Shortener (e2e)', () => {
   let app: INestApplication<App>;
@@ -62,7 +33,6 @@ describe('URL Shortener (e2e)', () => {
 
     await app.init();
 
-    // Очищаем базу данных перед каждым тестом
     await prismaService.clickStatistic.deleteMany();
     await prismaService.shortUrl.deleteMany();
   });

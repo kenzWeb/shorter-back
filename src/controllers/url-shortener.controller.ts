@@ -14,6 +14,16 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
+import {
+  AllUrlsResponse,
+  AnalyticsSummaryResponse,
+  ApiResponse,
+  DeleteResponse,
+  ShortUrl,
+  UrlAnalyticsResponse,
+  UrlInfoResponse,
+  UrlStatisticsResponse,
+} from '../interfaces';
 import { UrlShortenerService } from '../services/url-shortener.service';
 
 @Controller()
@@ -22,7 +32,9 @@ export class UrlShortenerController {
 
   @Post('shorten')
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  async shortenUrl(@Body() createShortUrlDto: CreateShortUrlDto) {
+  async shortenUrl(
+    @Body() createShortUrlDto: CreateShortUrlDto,
+  ): Promise<ApiResponse<ShortUrl>> {
     const shortUrl =
       await this.urlShortenerService.createShortUrl(createShortUrlDto);
 
@@ -36,6 +48,7 @@ export class UrlShortenerController {
         alias: shortUrl.alias,
         expiresAt: shortUrl.expiresAt,
         createdAt: shortUrl.createdAt,
+        clickCount: shortUrl.clickCount,
       },
     };
   }
@@ -45,7 +58,7 @@ export class UrlShortenerController {
     @Param('shortCode') shortCode: string,
     @Req() req: Request,
     @Res() res: Response,
-  ) {
+  ): Promise<void> {
     const url = await this.urlShortenerService.getUrlByCode(shortCode);
 
     if (!url) {
@@ -65,7 +78,9 @@ export class UrlShortenerController {
   }
 
   @Get('info/:shortCode')
-  async getUrlInfo(@Param('shortCode') shortCode: string) {
+  async getUrlInfo(
+    @Param('shortCode') shortCode: string,
+  ): Promise<UrlInfoResponse> {
     const url = await this.urlShortenerService.getUrlByCode(shortCode);
 
     if (!url) {
@@ -83,7 +98,7 @@ export class UrlShortenerController {
   }
 
   @Get('api/urls')
-  async getAllUrls() {
+  async getAllUrls(): Promise<AllUrlsResponse> {
     const urls = await this.urlShortenerService.getAllUrls();
     return {
       success: true,
@@ -92,7 +107,9 @@ export class UrlShortenerController {
   }
 
   @Delete('delete/:shortCode')
-  async deleteUrl(@Param('shortCode') shortCode: string) {
+  async deleteUrl(
+    @Param('shortCode') shortCode: string,
+  ): Promise<DeleteResponse> {
     const deleted = await this.urlShortenerService.deleteUrl(shortCode);
 
     if (!deleted) {
@@ -106,7 +123,9 @@ export class UrlShortenerController {
   }
 
   @Get('stats/:shortCode')
-  async getUrlStatistics(@Param('shortCode') shortCode: string) {
+  async getUrlStatistics(
+    @Param('shortCode') shortCode: string,
+  ): Promise<UrlStatisticsResponse> {
     const detailedInfo =
       await this.urlShortenerService.getDetailedUrlInfo(shortCode);
 
@@ -133,7 +152,7 @@ export class UrlShortenerController {
   }
 
   @Get('analytics/summary')
-  async getAnalyticsSummary() {
+  async getAnalyticsSummary(): Promise<AnalyticsSummaryResponse> {
     const allUrls = await this.urlShortenerService.getAllUrls();
     const allStats = await this.urlShortenerService.getAllClickStatistics();
 
@@ -161,7 +180,9 @@ export class UrlShortenerController {
   }
 
   @Get('analytics/:shortCode')
-  async getUrlAnalytics(@Param('shortCode') shortCode: string) {
+  async getUrlAnalytics(
+    @Param('shortCode') shortCode: string,
+  ): Promise<UrlAnalyticsResponse> {
     const analytics = await this.urlShortenerService.getAnalytics(shortCode);
 
     if (!analytics.url) {

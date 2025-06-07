@@ -69,10 +69,11 @@ describe('UrlShortenerController', () => {
       const result = await controller.shortenUrl(createShortUrlDto);
 
       expect(result.success).toBe(true);
-      expect(result.data.originalUrl).toBe('https://www.example.com');
-      expect(result.data.shortCode).toBe('unique-alias');
-      expect(result.data.alias).toBe('unique-alias');
-      expect(result.data.shortUrl).toBe('http://localhost:3000/unique-alias');
+      expect(result.data).toBeDefined();
+      expect(result.data!.originalUrl).toBe('https://www.example.com');
+      expect(result.data!.shortCode).toBe('unique-alias');
+      expect(result.data!.alias).toBe('unique-alias');
+      expect(result.data!.shortUrl).toBe('http://localhost:3000/unique-alias');
     });
 
     it('should create a short URL without alias', async () => {
@@ -98,9 +99,10 @@ describe('UrlShortenerController', () => {
       const result = await controller.shortenUrl(createShortUrlDto);
 
       expect(result.success).toBe(true);
-      expect(result.data.originalUrl).toBe('https://www.github.com');
-      expect(result.data.shortCode).toBe('abc12345');
-      expect(result.data.alias).toBeUndefined();
+      expect(result.data).toBeDefined();
+      expect(result.data!.originalUrl).toBe('https://www.github.com');
+      expect(result.data!.shortCode).toBe('abc12345');
+      expect(result.data!.alias).toBeUndefined();
     });
   });
 

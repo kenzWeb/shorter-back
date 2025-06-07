@@ -6,8 +6,7 @@ import {
 } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 import { CreateShortUrlDto } from '../dto/create-short-url.dto';
-import { ClickStatistics } from '../interfaces/click-statistics.interface';
-import { ShortUrl } from '../interfaces/short-url.interface';
+import { ClickStatistics, ShortUrl } from '../interfaces';
 import { PrismaService } from './prisma.service';
 
 @Injectable()
